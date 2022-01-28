@@ -103,4 +103,14 @@ dist
 # TernJS port file
 .tern-port
 
+# PyCharm files
 /.idea
+
+# dependencies
+/client/node_modules
+
+# testing
+/client/coverage
+
+# production
+/client/build

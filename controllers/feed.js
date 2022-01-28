@@ -2,8 +2,14 @@ exports.getPosts = (req, res) => {
   res.status(200).json({
     posts: [
       {
+        _id: '1',
         title: 'One',
-        content: 'Darkness imprisoning me'
+        content: 'Darkness imprisoning me',
+        imageUrl: 'images/tree.jpeg',
+        creator: {
+          name: 'igor'
+        },
+        createdAt: new Date()
       }
     ]
   });
