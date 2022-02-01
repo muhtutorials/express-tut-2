@@ -1,25 +1,196 @@
-exports.getPosts = (req, res) => {
-  res.status(200).json({
-    posts: [
-      {
-        _id: '1',
-        title: 'One',
-        content: 'Darkness imprisoning me',
-        imageUrl: 'images/tree.jpeg',
-        creator: {
-          name: 'igor'
-        },
-        createdAt: new Date()
-      }
-    ]
-  });
+const { validationResult } = require('express-validator');
+
+const Post = require('../models/post');
+const User = require('../models/user');
+const { deleteImage } = require('../utils');
+const io = require('../socket');
+
+exports.getPosts = async (req, res, next) => {
+  const page = req.query.page || 1;
+  const perPage = 2;
+
+  try {
+    const totalItems = await Post.find().countDocuments();
+    const posts = await Post.find().sort({ createdAt: -1 }).populate('creator')
+      .skip((page - 1) * perPage).limit(perPage);
+    res.status(200).json({ message: 'Fetched posts successfully', posts, totalItems });
+  } catch (err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 }
 
-exports.postPost = (req, res) => {
+exports.createPost = async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const error = new Error('Validation failed.');
+    error.statusCode = 422;
+    throw error;
+  }
+
+  if (!req.file) {
+    const error = new Error('No image provided.');
+    error.statusCode = 422;
+    throw error;
+  }
+
+  const { title, content } = req.body;
+  // convert back slashes to forward slashes because
+  // css property "background image" can't parse back slashes
+  const imageUrl = req.file.path.replaceAll('\\', '/');
+
+  try {
+    const post = await Post.create({
+      title,
+      content,
+      imageUrl,
+      creator: req.userId
+    });
+
+    const user = await User.findById(req.userId);
+    user.posts.push(post);
+    await user.save();
+
+    io.getIO().emit('posts', {
+      action: 'create',
+      // _doc property gives a post object without mongoose fields and methods
+      payload: { ...post._doc, creator: { _id: req.userId, name: user.name } }
+    });
+
+    res.status(201).json({
+      message: 'Post created successfully.',
+      post,
+      creator: { _id: user._id, name: user.name }
+    });
+  } catch(err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
+}
+
+exports.getPost = async (req, res, next) => {
+  const postId = req.params.postId;
+
+  try {
+    const post = await Post.findById(postId);
+
+    if (!post) {
+      const error = new Error('Could not find post.');
+      error.statusCode = 404;
+      throw error;
+    }
+    res.status(200).json({ message: 'Post fetched successfully.', post });
+  } catch(err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
+}
+
+exports.updatePost = async (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    const error = new Error('Validation failed.');
+    error.statusCode = 422;
+    throw error;
+  }
+
+  const postId = req.params.postId;
   const { title, content } = req.body;
 
-  res.status(201).json({
-    message: 'Post created successfully',
-    post: { id: new Date().toISOString(), title, content }
-  });
+  let imageUrl = req.body.image;
+  if (req.file) {
+    imageUrl = req.file.path.replaceAll('\\', '/');
+  }
+
+  if (!imageUrl) {
+    const error = new Error('No image picked.');
+    error.statusCode = 422;
+    throw error;
+  }
+
+  try {
+    let post = await Post.findById(postId).populate('creator');
+
+    if (!post) {
+      const error = new Error('Could not find post.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (post.creator._id.toString() !== req.userId) {
+      const error = new Error('Not authorized.');
+      error.statusCode = 403;
+      throw error;
+    }
+    console.log(req.userId);
+
+    if (imageUrl !== post.imageUrl) {
+      deleteImage(post.imageUrl);
+    }
+
+    post.title = title;
+    post.content = content;
+    post.imageUrl = imageUrl;
+    post = await post.save();
+
+    io.getIO().emit('posts', {
+      action: 'update',
+      // _doc property gives a post object without mongoose fields and methods
+      payload: { ...post._doc, creator: { _id: req.userId, name: post.creator.name } }
+    });
+
+    res.status(200).json({ message: 'Post updated successfully.', post });
+  } catch(err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
+}
+
+exports.deletePost = async (req, res, next) => {
+  const postId = req.params.postId;
+
+  try {
+    const post = await Post.findById(postId);
+
+    if (!post) {
+      const error = new Error('Could not find post.');
+      error.statusCode = 404;
+      throw error;
+    }
+
+    if (post.creator.toString() !== req.userId) {
+      const error = new Error('Not authorized.');
+      error.statusCode = 403;
+      throw error;
+    }
+
+    deleteImage(post.imageUrl);
+
+    await Post.findByIdAndRemove(postId);
+
+    const user = await User.findById(req.userId);
+
+    user.posts.pull(postId);
+    await user.save();
+
+    io.getIO().emit('posts', {
+      action: 'delete',
+      payload: { post: postId }
+    });
+
+    res.status(200).json({ message: 'Post deleted successfully.' })    ;
+  } catch(err) {
+    if (!err.statusCode) {
+      err.statusCode = 500;
+    }
+    next(err);
+  }
 }
