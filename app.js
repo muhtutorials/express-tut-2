@@ -1,12 +1,12 @@
 const path = require('path');
-const { createServer } = require('http');
 
 const express = require('express');
 const mongoose = require('mongoose');
 const multer = require('multer');
+const { graphqlHTTP } = require('express-graphql');
 
-const feedRoutes = require('./routes/feed');
-const authRoutes = require('./routes/auth');
+const graphqlSchema = require('./graphql/schema');
+const graphqlResolver = require('./graphql/resolvers');
 
 const fileStorage = multer.diskStorage({
 	destination: (req, file, cb) => {
@@ -18,6 +18,7 @@ const fileStorage = multer.diskStorage({
 		cb(null, uniqueSuffix + '-' + file.originalname)
 	}
 });
+
 const fileFilter = (req, file, cb) => {
 	if (file.mimetype === 'image/png' || file.mimetype === 'image/jpeg' || file.mimetype === 'image/jpg') {
 		cb(null, true);
@@ -27,8 +28,6 @@ const fileFilter = (req, file, cb) => {
 };
 
 const app = express();
-// websockets require this server setup
-const httpServer = createServer(app);
 
 app.use(express.json());
 
@@ -44,8 +43,11 @@ app.use((req, res, next) => {
 
 app.use(multer({ storage: fileStorage, fileFilter }).single('image'));
 
-app.use('/feed', feedRoutes);
-app.use('/auth', authRoutes);
+app.use('/graphql', graphqlHTTP({
+	schema: graphqlSchema,
+	rootValue: graphqlResolver,
+	graphiql: true,
+}));
 
 app.use((error, req, res, next) => {
 	const { statusCode, message, data } = error;
@@ -55,7 +57,6 @@ app.use((error, req, res, next) => {
 mongoose.connect('mongodb+srv://igor:123321@cluster0.lcrui.mongodb.net/blog?retryWrites=true&w=majority')
 	.then(() => {
 		console.log('Connected to MongoDB server');
-		httpServer.listen(8080);
-		require('./socket').init(httpServer);
+		app.listen(8080);
 	})
 	.catch(err => console.log(err));
