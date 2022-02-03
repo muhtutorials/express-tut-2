@@ -38,6 +38,10 @@ app.use((req, res, next) => {
 	res.setHeader('Access-Control-Allow-Origin', '*');
 	res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE');
 	res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+	// allow graphql requests
+	if (req.method === 'OPTIONS') {
+		return res.sendStatus(200);
+	}
 	next();
 });
 
@@ -47,6 +51,18 @@ app.use('/graphql', graphqlHTTP({
 	schema: graphqlSchema,
 	rootValue: graphqlResolver,
 	graphiql: true,
+	customFormatErrorFn(err) {
+		// originalError is an error thrown by your code or a 3rd party package
+		if (!err.originalError) {
+			return err;
+		}
+
+		const data = err.originalError.data;
+		const message = err.message || 'An error occurred';
+		const code = err.originalError.code || 500;
+
+		return { data, message, code };
+	}
 }));
 
 app.use((error, req, res, next) => {
@@ -56,7 +72,7 @@ app.use((error, req, res, next) => {
 
 mongoose.connect('mongodb+srv://igor:123321@cluster0.lcrui.mongodb.net/blog?retryWrites=true&w=majority')
 	.then(() => {
-		console.log('Connected to MongoDB server');
-		app.listen(8080);
+		console.log('Connected to MongoDB');
+		app.listen(8080, () => console.log('Server running on port 8080...'));
 	})
 	.catch(err => console.log(err));
