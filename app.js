@@ -8,6 +8,7 @@ const { graphqlHTTP } = require('express-graphql');
 const graphqlSchema = require('./graphql/schema');
 const graphqlResolver = require('./graphql/resolvers');
 const auth = require('./middleware/auth');
+const { deleteImage } = require('./utils');
 
 const fileStorage = multer.diskStorage({
 	destination: (req, file, cb) => {
@@ -49,6 +50,24 @@ app.use((req, res, next) => {
 app.use(multer({ storage: fileStorage, fileFilter }).single('image'));
 
 app.use(auth);
+
+app.put('/post-image', (req, res, next) => {
+	if (!req.isAuth) {
+		throw new Error('Not authorized');
+	}
+
+	if (!req.file) {
+		return res.status(200).json({ message: 'No file provided' });
+	}
+
+	if (req.body.oldPath) {
+		deleteImage(req.body.oldPath);
+	}
+
+	const filePath = req.file.path.replaceAll('\\', '/');
+
+	return res.status(201).json({ message: 'File stored', filePath });
+});
 
 app.use('/graphql', graphqlHTTP({
 	schema: graphqlSchema,

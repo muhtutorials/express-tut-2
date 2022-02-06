@@ -34,15 +34,30 @@ module.exports = buildSchema(`
   input PostInput {
     title: String!
     content: String!
-    imageUrl: String
+    imageUrl: String!
+  }
+  
+  type PostList {
+    posts: [Post!]!
+    totalPosts: Int!
+  }
+  
+  type Status {
+    status: String!
   }
 
   type Query {
     login(email: String!, password: String!): Auth!
+    postList(page: Int): PostList!
+    postDetail(postId: ID!): Post!
+    getUser: User!
   }
 
   type Mutation {
     createUser(userInput: UserInput): User!
     createPost(postInput: PostInput): Post!
+    updatePost(postId: ID!, postInput: PostInput): Post!
+    deletePost(postId: ID!): Boolean
+    updateStatus(status: String!): User!
   }
 `);
